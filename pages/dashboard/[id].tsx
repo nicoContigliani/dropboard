@@ -1,272 +1,339 @@
+import dynamic from 'next/dynamic'
+
 import { GetServerSideProps, NextPage } from 'next';
-import { useUploads } from '@/hooks/useUploads';
-import { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/lib/store';
-import TrelloBoard from '@/components/ResponsiveDND/DND';
-import { Home, Info, Settings, Notifications, AccountCircle } from '@mui/icons-material';
-import Navbar from '@/components/ResponsiveNavbar/ResponsiveNavbar';
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/router';
+import { useDispatch, useSelector } from 'react-redux';
+import type { AppDispatch, RootState } from '@/lib/store';
+import {
+  fetchUploadById,
+  updateUpload,
+  clearError,
+  selectCurrentUpload,
+  selectUploadsLoading,
+  selectUploadsError,
+} from '@/lib/features/uploads/uploadsSlice';
+
+// import TrelloBoard from '@/components/ResponsiveDND/DND';
+
+const TrelloBoard = dynamic(() => import('@/components/ResponsiveDND/DND'), {
+  loading: () => <div>Loading...</div>,
+})
 
 import {
-
-    Menu,
-    Close,
-    Person,
-    Email,
-    Code,
-    ContentCopy
+  Box,
+  Typography,
+  CircularProgress,
+  Button,
+  Paper,
+  Alert,
+  Container,
+} from '@mui/material';
+import {
+  Refresh,
+  ErrorOutline,
+  Login
 } from '@mui/icons-material';
-import { Avatar, Box, Card, CardContent, CardHeader, Chip, IconButton, Typography } from '@mui/material';
 
+// Definir hooks personalizados localmente
+const useAppDispatch = () => useDispatch<AppDispatch>();
+const useAppSelector = useSelector.withTypes<RootState>();
 
 interface PageProps {
-    id: string;
+  id: string;
 }
 
 interface QueryParams {
-    id: string;
+  id: string;
 }
 
 const DynamicPage: NextPage<PageProps> = ({ id }) => {
-    const { getUploadById, modifyUpload, currentUpload, isLoading, error, clearUploadError } = useUploads();
-    const [localLoading, setLocalLoading] = useState(false);
-    const [localError, setLocalError] = useState<string | null>(null);
+  const dispatch = useAppDispatch();
+  const currentUpload = useAppSelector(selectCurrentUpload);
+  const isLoading = useAppSelector(selectUploadsLoading);
+  const error = useAppSelector(selectUploadsError);
+  
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const router = useRouter();
 
-    // Obtener datos del usuario desde localStorage
-    const [userData, setUserData] = useState<{ name: string; email: string } | null>(null);
+  // Función para limpiar errores
+  const clearAllErrors = useCallback(() => {
+    setLocalError(null);
+    dispatch(clearError());
+  }, [dispatch]);
 
-    console.log("🚀 ~ DynamicPage ~ currentUpload:", currentUpload)
+  useEffect(() => {
+    return () => {
+      dispatch(clearError());
+    };
+  }, [dispatch]);
 
-    useEffect(() => {
-        // Obtener datos del usuario desde localStorage
-        const authData = localStorage.getItem('auth');
-        if (authData) {
-            try {
-                const parsedAuth = JSON.parse(authData);
-                if (parsedAuth.user) {
-                    setUserData(parsedAuth.user);
-                }
-            } catch (err) {
-                console.error('Error parsing auth data:', err);
-            }
+  useEffect(() => {
+    const loadUpload = async () => {
+      if (!id) {
+        setLocalError('No se proporcionó un ID de proyecto');
+        return;
+      }
+
+      setLocalLoading(true);
+      clearAllErrors();
+
+      try {
+        await dispatch(fetchUploadById(id)).unwrap();
+      } catch (err: any) {
+        console.error('Error fetching upload:', err);
+        const errorMessage = err?.message || 'Error al cargar el proyecto';
+        setLocalError(errorMessage);
+        
+        // Si es un error de autenticación, redirigir al login
+        if (errorMessage.includes('Authentication failed') || errorMessage.includes('401')) {
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
         }
-
-        const fetchUpload = async () => {
-            if (!id) return;
-
-            setLocalLoading(true);
-            setLocalError(null);
-
-            try {
-                await getUploadById(id);
-            } catch (err) {
-                setLocalError('Error al cargar el upload');
-            } finally {
-                setLocalLoading(false);
-            }
-        };
-
-        fetchUpload();
-    }, [id, getUploadById]);
-
-    // Configuración del navbar
-    const navItems = [
-        {
-            label: 'Inicio',
-            icon: <Home />,
-            onClick: () => console.log('Ir a inicio')
-        },
-        {
-            label: 'Información',
-            icon: <Info />,
-            onClick: () => console.log('Ir a información')
-        },
-    ];
-
-    const actions = [
-        {
-            icon: <Notifications />,
-            onClick: () => console.log('Notificaciones'),
-            label: 'Notificaciones'
-        },
-        {
-            icon: <Settings />,
-            onClick: () => console.log('Configuración'),
-            label: 'Configuración'
-        },
-        {
-            icon: <AccountCircle />,
-            onClick: () => console.log('Perfil'),
-            label: 'Perfil de usuario'
-        },
-    ];
-
-    // Función para manejar la actualización de datos
-    const handleUpdateData = async (updatedData: any) => {
-        try {
-            if (!currentUpload?._id) {
-                throw new Error('No hay ID de upload disponible');
-            }
-
-            await modifyUpload(currentUpload._id, {
-                data: updatedData
-            });
-
-            console.log('Datos actualizados correctamente');
-        } catch (err) {
-            console.error('Error al actualizar datos:', err);
-            throw err;
-        }
+      } finally {
+        setLocalLoading(false);
+      }
     };
 
-    const handleRetry = () => {
-        if (id) {
-            getUploadById(id);
-        }
-    };
+    loadUpload();
+  }, [id, dispatch, clearAllErrors, router]);
 
-    const loading = isLoading || localLoading;
-    const errorMessage = error || localError;
-
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            </div>
-        );
+  useEffect(() => {
+    if (error) {
+      setLocalError(error);
     }
+  }, [error]);
 
-    if (errorMessage) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen">
-                <div className="text-red-500 text-lg mb-4">Error: {errorMessage}</div>
-                <button
-                    onClick={handleRetry}
-                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                >
-                    Reintentar
-                </button>
-            </div>
-        );
+  const handleUpdateData = async (updatedData: any) => {
+    try {
+      if (!currentUpload?._id) {
+        throw new Error('No hay ID de proyecto disponible');
+      }
+
+      await dispatch(updateUpload({
+        id: currentUpload._id,
+        data: { data: updatedData }
+      })).unwrap();
+      
+    } catch (err: any) {
+      console.error('Error al actualizar datos:', err);
+      const errorMessage = err?.message || 'Error al guardar los cambios';
+      setLocalError(errorMessage);
+      throw err;
     }
+  };
 
+  const handleRetry = () => {
+    clearAllErrors();
+    if (id) {
+      dispatch(fetchUploadById(id));
+    }
+  };
+
+  const handleLoginRedirect = () => {
+    router.push('/login');
+  };
+
+  const loading = isLoading || localLoading;
+  const errorMessage = error || localError;
+
+  // Verificar específicamente error 401 (Unauthorized)
+  const isUnauthorized = errorMessage?.includes('401') || 
+                         errorMessage?.includes('Unauthorized') || 
+                         errorMessage?.includes('Authentication failed') ||
+                         errorMessage?.includes('No authentication data') ||
+                         errorMessage?.includes('No token found');
+
+  if (loading) {
     return (
-        <div>
-            {/* Agregar el navbar aquí */}
-            <Navbar
-                title="Mi App"
-                navItems={navItems}
-                actions={actions}
-                color="default"
-                backgroundColor="rgba(255, 255, 255, 0.95)"
-                textColor="#2c3e50"
-                hideOnScroll={true}
-                sx={{
-                    backdropFilter: 'blur(8px)',
-                    borderBottom: '1px solid rgba(0, 0, 0, 0.1)'
-                }}
-            />
-
-            <div className="container mx-auto p-4" style={{ paddingTop: '70px' }}>
-         
-
-                <Card
-                    elevation={1}
-                    sx={{
-                        borderRadius: 3,
-                        background: 'rgba(255, 255, 255, 0.7)',
-                        backdropFilter: 'blur(10px)',
-                        border: '1px solid rgba(255, 255, 255, 0.5)',
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-                        overflow: 'visible',
-                        mb: 3,
-                        mx:4
-                    }}
-                >
-                    <CardHeader
-                        title={
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Code sx={{ mr: 1.5, color: 'primary.main' }} />
-                                <Typography variant="h5" component="h5" fontWeight="600">
-                                    ID: {id}
-                                </Typography>
-                                <IconButton
-                                    size="small"
-                                    sx={{ ml: 1 }}
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(id);
-                                    }}
-                                >
-                                    <ContentCopy fontSize="small" />
-                                </IconButton>
-                            </Box>
-                        }
-                        sx={{
-                            pb: 1,
-                            borderBottom: userData ? '1px solid rgba(0, 0, 0, 0.06)' : 'none'
-                        }}
-                    />
-
-                    {userData && (
-                        <CardContent sx={{ pt: 2, pb: 3 }}>
-                            <Box sx={{
-                                display: 'flex',
-                                flexDirection: { xs: 'column', sm: 'row' },
-                                alignItems: { xs: 'flex-start', sm: 'center' },
-                                gap: 2
-                            }}>
-                                <Avatar sx={{ bgcolor: 'primary.main', width: 56, height: 56 }}>
-                                    <Person />
-                                </Avatar>
-
-                                <Box sx={{ flexGrow: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-                                        <Typography variant="h6" component="h3" fontWeight="500">
-                                            {userData.name}
-                                        </Typography>
-                                        <Chip
-                                            label="Usuario"
-                                            size="small"
-                                            color="primary"
-                                            variant="outlined"
-                                        />
-                                    </Box>
-
-                                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <Email sx={{ fontSize: 20, mr: 1, color: 'text.secondary' }} />
-                                        <Typography variant="body1" color="text.secondary">
-                                            {userData.email}
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Box>
-                        </CardContent>
-                    )}
-                </Card>
-
-
-                {currentUpload ? (
-                    <div className="bg-white shadow-md rounded p-4">                   
-                        <TrelloBoard data={currentUpload} />
-                    </div>
-                ) : (
-                    <div className="text-center text-gray-500">
-                        No se encontró el upload con ID: {id}
-                    </div>
-                )}
-            </div>
-        </div>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          backgroundColor: 'background.default'
+        }}
+      >
+        <Box sx={{ textAlign: 'center' }}>
+          <CircularProgress 
+            size={60} 
+            thickness={4}
+            sx={{ 
+              color: 'primary.main',
+              mb: 2
+            }}
+          />
+          <Typography variant="h6" color="text.secondary">
+            Cargando proyecto...
+          </Typography>
+        </Box>
+      </Box>
     );
+  }
+
+  if (isUnauthorized) {
+    return (
+      <Container maxWidth="sm" sx={{ py: 8 }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            textAlign: 'center',
+            backgroundColor: 'background.paper'
+          }}
+        >
+          <Login 
+            sx={{ 
+              fontSize: 64, 
+              color: 'warning.main',
+              mb: 2
+            }}
+          />
+          <Typography variant="h5" gutterBottom color="warning.main">
+            Sesión expirada
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Tu sesión ha expirado o no tienes permisos para acceder a este proyecto.
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={handleLoginRedirect}
+            startIcon={<Login />}
+          >
+            Iniciar sesión
+          </Button>
+        </Paper>
+      </Container>
+    );
+  }
+
+  if (errorMessage && !isUnauthorized) {
+    return (
+      <Container maxWidth="sm" sx={{ py: 8 }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            textAlign: 'center',
+            backgroundColor: 'background.paper'
+          }}
+        >
+          <ErrorOutline 
+            sx={{ 
+              fontSize: 64, 
+              color: 'error.main',
+              mb: 2
+            }}
+          />
+          <Typography variant="h5" gutterBottom color="error">
+            Error al cargar el proyecto
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            {errorMessage}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              onClick={handleRetry}
+              startIcon={<Refresh />}
+            >
+              Reintentar
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={clearAllErrors}
+            >
+              Cerrar
+            </Button>
+          </Box>
+        </Paper>
+      </Container>
+    );
+  }
+
+  return (
+    <Container 
+      maxWidth={false} 
+      sx={{ 
+        py: 3, 
+        px: { xs: 1, sm: 2, md: 3 },
+        backgroundColor: 'background.default',
+        minHeight: '100vh'
+      }}
+    >
+      <Box sx={{ mb: 3 }}>
+        <Typography 
+          variant="h4" 
+          sx={{ 
+            fontWeight: 700,
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
+          Gestor de Proyectos
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          ID del proyecto: {id}
+        </Typography>
+      </Box>
+
+      {currentUpload ? (
+        <Paper
+          elevation={2}
+          sx={{
+            p: 0,
+            overflow: 'hidden',
+            backgroundColor: 'background.paper'
+          }}
+        >
+          <TrelloBoard 
+            data={currentUpload} 
+            onUpdateData={handleUpdateData}
+          />
+        </Paper>
+      ) : (
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            textAlign: 'center',
+            backgroundColor: 'background.paper'
+          }}
+        >
+          <Typography variant="h6" color="text.secondary">
+            No se encontró el proyecto con ID: {id}
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={handleRetry}
+            startIcon={<Refresh />}
+            sx={{ mt: 2 }}
+          >
+            Reintentar
+          </Button>
+        </Paper>
+      )}
+    </Container>
+  );
 };
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
-    const { id } = context.params as unknown as QueryParams;
+  const { id } = context.params as unknown as QueryParams;
 
+  if (!id) {
     return {
-        props: {
-            id,
-        },
+      notFound: true,
     };
+  }
+
+  return {
+    props: {
+      id,
+    },
+  };
 };
 
 export default DynamicPage;
