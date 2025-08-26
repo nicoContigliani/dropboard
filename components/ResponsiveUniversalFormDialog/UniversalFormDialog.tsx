@@ -61,7 +61,7 @@ export type FieldType =
 export interface FormField {
   name: string;
   label: string;
-  type: FieldType;
+  type: FieldType| 'custom'; // Añadir 'custom' como tipo válido;
   required?: boolean;
   defaultValue?: any;
   options?: Array<{ label: string; value: any }>;
